@@ -6,13 +6,19 @@ import sys
 import logging
 import argparse
 from pathlib import Path
+import json
+from typing import List, Dict, Any
 
 
 DIR = Path(__file__).parent
 
 
 class PythonVerionError(Exception):
-    "Exception for wrong python version"
+    "Exception for wrong python version."
+
+
+class FileIOError(Exception):
+    "Exception raised on reading/writing files."
 
 
 def version_check():
@@ -22,7 +28,7 @@ def version_check():
         PythonVerionError: Raised when wrong python version is used.
     """
     ver_major, ver_minor, *_ = sys.version_info
-    if ver_major < 3 and ver_minor < 7:
+    if ver_major < 3 or ver_minor < 6:
         raise PythonVerionError("Please use python 3.7 and above.")
 
 
@@ -30,7 +36,7 @@ def get_args() -> argparse.Namespace:
     """Input parameters parser.
 
     Returns:
-      Namespace of stdin parameters.
+        Namespace of stdin parameters.
     """
     parser = argparse.ArgumentParser(description="Python codebase scanner.")
 
@@ -56,20 +62,84 @@ def get_args() -> argparse.Namespace:
     return args
 
 
-def main(path_codebase: str, path_output: str) -> None:
+def read(path: str) -> str:
+    """Function to read the object as text.
+
+    Args:
+        path (str): Path to the file to read.
+
+    Returns:
+        File content as string.
+
+    Raises:
+        FileIOError: Raised when reading error occured.
+    """
+    try:
+        with open(path, "r") as fread:
+            return fread.read()
+    except (IOError, FileExistsError, FileNotFoundError, PermissionError) as ex:
+        raise FileIOError from ex
+
+
+def write(path: str, obj: str) -> None:
+    """Function to write text (string obejcts) to fs.
+
+    Args:
+        path (str): Path to the file to read.
+        obj (str): Object to write.
+
+    Raises:
+        FileIOError: Raised when file writing error occured.
+    """
+    try:
+        path_dir = os.path.dirname(path)
+        if not os.path.isdir(path_dir):
+            os.makedirs(path_dir)
+
+        with open(path, "w") as fwrite:
+            fwrite.write(obj)
+    except (IOError, PermissionError) as ex:
+        raise FileIOError from ex
+
+
+def scan_dir(path: str) -> Dict[str, str]:
+    """Function to scan the directory with all subdirectories.
+
+    Args:
+        path (str): Path to the directory to scan.
+
+    Returns:
+        Dict with the pathes and names of the python modules (*.py files).
+    """
+    output: Dict[str, str] = {}
+
+    for filepath in os.listdir(path):
+        full_path = os.path.join(path, filepath)
+
+        if os.path.isdir(full_path):
+            output = {**output, **scan_dir(full_path)}
+
+        if filepath.endswith(".py"):
+            output[full_path] = filepath
+
+    return output
+
+
+def main(path_codebase: str, path_output: str):
     """Main runner.
 
     Args:
-        path_codebase: Path to the codebase to analyse.
-        path_output: Path to store the output results.
+        path_codebase (str): Path to the codebase to analyse.
+        path_output (str): Path to store the output results.
     """
-    raise Exception("test")
+    modules_to_scan = scan_dir(path=path_codebase)
+    return modules_to_scan
 
 
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s.%(msecs)03d [pid:%(process)d] [%(levelname)-5s] %(message)s",
+        format="%(asctime)s.%(msecs)03d [pid:%(process)d] [%(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     logger = logging.getLogger("pyscan")
@@ -77,7 +147,7 @@ if __name__ == "__main__":
     try:
         version_check()
         args = get_args()
-        main(path_codebase=args.path_codebase, path_output=args.path_output)
+        logger.info(main(path_codebase=args.path_codebase, path_output=args.path_output))
     except Exception as ex:
         logger.error(ex)
         sys.exit(1)
